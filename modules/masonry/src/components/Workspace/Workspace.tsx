@@ -137,11 +137,9 @@ export function Workspace({ config }: WorkspaceViewProps) {
         }
       }
 
+      // No history commit here: `discardTower` already makes one, and a second would leave an
+      // identical entry that the first undo spends doing nothing.
       store.clearSelection();
-
-      import('@/stores/history').then(({ useWorkspaceHistoryStore }) => {
-        useWorkspaceHistoryStore.getState().commit();
-      });
     };
 
     window.addEventListener('keydown', handleKeyDown);

@@ -17,6 +17,7 @@ import { useActionMenuStore } from '@/stores/actionMenu';
 import { useBrickLayoutStore } from '@/stores/brick';
 import { useWorkspaceScaleStore } from '@/stores/scale';
 import { useConnectionPreviewStore } from '@/stores/connection-preview';
+import { useWorkspaceHistoryStore } from '@/stores/history';
 import { usePaletteDragStore } from '@/stores/palette';
 import { useTrashStore } from '@/stores/trash';
 import { useWorkspaceViewportStore } from '@/stores/viewport';
@@ -41,6 +42,7 @@ afterEach(() => {
   useWorkspaceViewportStore.setState({ offset: { x: 0, y: 0 } });
   useConnectionPreviewStore.setState({ activeTarget: null, isValid: false, snapPosition: null });
   useWorkspaceScaleStore.setState({ level: DEFAULT_SCALE_LEVEL });
+  useWorkspaceHistoryStore.getState().clear();
 });
 
 // -------------------------------------------------------------------------------------------------
@@ -303,6 +305,44 @@ describe('Workspace', () => {
     expect(remaining).toBeDefined();
     expect((remaining?.root as TowerStatementNode).nestedNext).toBeNull();
     expect(Object.keys(useWorkspaceStore.getState().towers)).toEqual(['keyboard-nested']);
+  });
+
+  it.each([
+    ['root', 'undo-key-outer'],
+    ['nested', 'undo-key-inner'],
+  ])('takes one undo to bring back a %s brick deleted with the keyboard', async (_, brickId) => {
+    const { container } = render(<Workspace config={{ palette: paletteConfig }} />);
+    await vi.dynamicImportSettled();
+
+    act(() => {
+      useWorkspaceStore.getState().createTower(makeNestingTower('undo-key'));
+    });
+    useWorkspaceHistoryStore.getState().commit();
+    const entriesBefore = useWorkspaceHistoryStore.getState().history.length;
+
+    fireEvent.click(container.querySelector(`[data-id="${brickId}"]`) as HTMLElement);
+    fireEvent.keyDown(window, { key: 'Delete' });
+    await vi.dynamicImportSettled();
+
+    // `discardTower` commits the delete; a second commit here would make the first undo a no-op.
+    expect(useWorkspaceHistoryStore.getState().history.length).toBe(entriesBefore + 1);
+
+    act(() => {
+      useWorkspaceHistoryStore.getState().undo();
+    });
+
+    const restored = useWorkspaceStore.getState().towers['undo-key']?.root as TowerStatementNode;
+    expect(restored?.model.id).toBe('undo-key-outer');
+    expect(restored?.nestedNext?.model.id).toBe('undo-key-inner');
+
+    act(() => {
+      useWorkspaceHistoryStore.getState().redo();
+    });
+
+    const afterRedo = useWorkspaceStore.getState().towers['undo-key']?.root as
+      | TowerStatementNode
+      | undefined;
+    expect(afterRedo?.nestedNext ?? null).toBeNull();
   });
 
   it('leaves the selection alone while the user types in a brick input', () => {
